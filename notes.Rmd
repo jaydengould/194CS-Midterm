@@ -1,0 +1,238 @@
+---
+title: "notes"
+output: html_document
+---
+
+```{r}
+############################################################
+# Ahrens & Dieter (1974) Gamma RNG (scale = 1)
+# - GS for 0 < a <= 1
+# - GC (Cauchy) for 1 < a <= 2.5327805161251
+# - GD (Modified Normal–Exponential) for a > 2.5327805161251
+#
+# Output: Gamma(shape = a, rate = 1)
+############################################################
+
+# -----------------------------
+# Algorithm GS: 0 < a <= 1
+# (This part matches what we wrote before.)
+# -----------------------------
+rgamma_GS_one <- function(a) {
+  if (!(a > 0 && a <= 1)) stop("GS requires 0 < a <= 1")
+
+  # b = (e + a)/e
+  b <- (exp(1) + a) / exp(1)
+
+  repeat {
+    # Step 1: u ~ U(0,1), p = b*u
+    u <- runif(1)
+    p <- b * u
+
+    if (p < 1) {
+      # Case x <= 1: x = p^(1/a)
+      x  <- p^(1 / a)
+      u2 <- runif(1)
+
+      # Accept if u2 <= exp(-x)
+      if (u2 <= exp(-x)) return(x)
+
+    } else {
+      # Case x > 1: x = -log((b - p)/a)
+      x  <- -log((b - p) / a)
+      u2 <- runif(1)
+
+      # Accept if u2 <= x^(a-1)
+      if (u2 <= x^(a - 1)) return(x)
+    }
+  }
+}
+
+
+# -----------------------------
+# Algorithm GC: a > 1 (Cauchy method)
+# (This part matches what we wrote before.)
+# -----------------------------
+rgamma_GC_one <- function(a) {
+  if (!(a > 1)) stop("GC requires a > 1")
+
+  b <- a - 1
+  A <- a + b          # = 2a - 1
+  s <- sqrt(A)
+
+  repeat {
+    # Candidate from shifted/scaled Cauchy:
+    u <- runif(1)
+    t <- s * tan(pi * (u - 0.5))
+    x <- b + t
+
+    # Gamma support: x must be > 0
+    if (x <= 0) next
+
+    # Acceptance test (log form for stability):
+    u2  <- runif(1)
+    rhs <- b * log(x / b) - t + log(1 + (t^2) / A)
+
+    if (log(u2) <= rhs) return(x)
+  }
+}
+
+
+# -----------------------------
+# Algorithm GD: a > 2.5327805161251
+# "Modified Normal–Exponential Method" with squeeze tests.
+#
+# This is the one your group is asking about.
+# It's faster than GC for large a.
+# -----------------------------
+rgamma_GD_one <- function(a) {
+  if (!(a > 2.5327805161251)) stop("GD requires a > 2.5327805161251")
+
+  # ---- Step 1: Precompute constants (exactly as in the paper) ----
+  mu <- a - 1                      # paper's mu
+  V  <- sqrt(a)                    # paper's V
+
+  # sigma^2 = a + 1.632993161855 * V
+  sig2 <- a + 1.632993161855 * V
+  sig  <- sqrt(sig2)               # sigma
+
+  w <- sig2 / mu                   # w = sigma^2 / mu
+
+  # d = sqrt(6) * sigma  (since sqrt(6) = 2.44948974278318...)
+  d <- 2.44948974278318 * sig
+
+  # b = mu + d
+  b <- mu + d
+
+  # β is the small probability to jump to the exponential-tail proposal
+  beta <- 0.009572265238289
+
+  repeat {
+    # ---- Step 2: Decide proposal branch ----
+    u_branch <- runif(1)
+
+    # If u <= β, go to Step 8 (exponential tail proposal)
+    if (u_branch <= beta) {
+
+      # ---- Step 8: s ~ Exp(1), x = b*(1 + s/d) ----
+      s_exp <- rexp(1)
+      x <- b * (1 + s_exp / d)
+
+      # ---- Step 9: Acceptance test for tail branch ----
+      u <- runif(1)
+
+      # Work on log-scale (paper uses ln u comparisons)
+      # Condition: if ln u > (...) then reject (go to step 2)
+      # otherwise accept.
+      rhs <- mu * (2 + log(x / mu) - x / b) +
+        3.7203284924588 - b - log(sig * s_exp / (d * b))
+
+      if (log(u) <= rhs) return(x)
+
+    } else {
+      # ---- Step 3: Normal proposal branch ----
+      s_norm <- rnorm(1)               # s ~ N(0,1)
+      x <- mu + sig * s_norm           
+
+      # If x < 0 or x > b, reject and restart
+      if (x <= 0 || x >= b) next
+
+      # ---- Step 4: Generate u and set s = s^2 / 2 ----
+      u <- runif(1)
+      s <- (s_norm^2) / 2
+
+      # If s > 0 go to Step 6 else Step 5
+      # (s is always >= 0, but we follow the paper’s logic anyway)
+      if (s > 0) {
+        # ---- Step 6: fast squeeze test ----
+        # If u <= 1 - s*(w - 1), accept immediately
+        if (u <= 1 - s * (w - 1)) return(x)
+
+      } else {
+        # ---- Step 5: alternative squeeze test ----
+        # If u <= 1 - s*((1 - 2s/V) * w^-1), accept
+        if (u <= 1 - s * ((1 - 2 * s / V) / w)) return(x)
+      }
+
+      # ---- Step 7: full (slower) rejection test if squeeze fails ----
+      # Reject if ln u > mu(1 + ln(x/mu)) - x + s_norm*sigma
+      rhs_full <- mu * (1 + log(x / mu)) - x + s_norm * sig
+
+      if (log(u) <= rhs_full) return(x)
+      # else reject and repeat
+    }
+  }
+}
+
+
+# -----------------------------
+# Main wrapper: n draws for any a > 0 using GS / GC / GD
+# -----------------------------
+rgamma_AD74 <- function(n, a) {
+  if (length(a) != 1) stop("Please provide a single shape parameter a.")
+  if (!(a > 0)) stop("a must be > 0")
+  if (n <= 0) return(numeric(0))
+
+  out <- numeric(n)
+
+  if (a <= 1) {
+    for (i in seq_len(n)) out[i] <- rgamma_GS_one(a)
+
+  } else if (a <= 2.5327805161251) {
+    # Use Cauchy method for the intermediate range
+    for (i in seq_len(n)) out[i] <- rgamma_GC_one(a)
+
+  } else {
+    # Use the faster modified Normal–Exponential method
+    for (i in seq_len(n)) out[i] <- rgamma_GD_one(a)
+  }
+
+  out
+}
+
+```
+
+
+
+
+```{r}
+n <- 10^6
+alpha <- c(0.1, 0.05, 1, 2, 5)
+x <- numeric(length(alpha))
+for (i in 1:length(alpha)){
+  x[i] <- rgamma_AD74(10, i)
+}
+
+
+```
+```{r}
+n <- 10^5
+a_0_5 <- rgamma_AD74(n, 0.5)
+a_1 <- rgamma_AD74(n, 1)
+a_1_5 <- rgamma_AD74(n, 1.5)
+a_3 <- rgamma_AD74(n, 3)
+
+```
+
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+
+# Put samples into long format so ggplot can facet by a
+df <- tibble(
+  x = c(a_0_5, a_1, a_1_5, a_3),
+  a = factor(rep(c(0.5, 1, 1.5, 3), each = n))
+)
+
+ggplot(df, aes(x = x)) +
+  geom_histogram(aes(y = after_stat(density)), bins = 80) +
+  stat_function(
+    fun = function(x) dgamma(x, shape = 0.5, rate = 1),
+    linewidth = 1,
+    inherit.aes = FALSE,
+    data = tibble(x = 0), # dummy
+    aes(x = x)            # needed for stat_function
+  )
+```
+
