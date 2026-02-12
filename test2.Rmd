@@ -1,0 +1,205 @@
+---
+title: "194testjg"
+author: "Jayden Gould, Harrison Funk, Elijah DiFuria, Kian Jadbabaei"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# Master Function: Dynamically routes shape parameter 'a' to the correct mathematical algorithm
+generate_gamma_complete <- function(n, a) {
+  if (a <= 0) stop("Shape parameter 'a' must be strictly positive (> 0)")
+  
+  if (a <= 1) {
+    # Handles infinite asymptote at zero
+    return(generate_gamma_GS(n, a))
+  } else if (a <= 2.53278) {
+    # Handles parameters where GO polynomial bounds are invalid
+    return(generate_gamma_GC(n, a))
+  } else {
+    # Highly optimized Normal-Exponential split for large parameters
+    return(generate_gamma_GO(n, a))
+  }
+}
+```
+
+```{r}
+# Algorithm GS: Piecewise Envelope
+generate_gamma_GS <- function(n, a) {
+  samples <- numeric(n)
+  b <- (exp(1) + a) / exp(1) 
+  
+  for (i in 1:n) {
+    accepted <- FALSE
+    while (!accepted) {
+      u <- runif(1)
+      p <- b * u
+      if (p <= 1) {
+        x <- p^(1 / a)
+        u_prime <- runif(1)
+        if (log(u_prime) <= -x) {
+          samples[i] <- x
+          accepted <- TRUE
+        }
+      } else {
+        x <- -log((b - p) / a)
+        u_prime <- runif(1)
+        if (log(u_prime) <= (a - 1) * log(x)) {
+          samples[i] <- x
+          accepted <- TRUE
+        }
+      }
+    }
+  }
+  return(samples)
+}
+```
+
+```{r}
+# Algorithm GC: Cauchy Envelope Method
+generate_gamma_GC <- function(n, a) {
+  samples <- numeric(n)
+  b <- a - 1
+  A <- 2 * a - 1
+  s <- sqrt(A)
+  
+  for(i in 1:n) {
+    accepted <- FALSE
+    while(!accepted) {
+      u <- runif(1)
+      t <- s * tan(pi * (u - 0.5))
+      x <- b + t
+      
+      if(x >= 0) {
+        u2 <- runif(1)
+        # Evaluated on log scale to prevent exp() overflow
+        test_val <- b * log(x / b) - t + log(1 + (t^2 / A))
+        if(log(u2) <= test_val) {
+          samples[i] <- x
+          accepted <- TRUE
+        }
+      }
+    }
+  }
+  return(samples)
+}
+```
+
+```{r}
+# Algorithm GO: Modified Normal-Exponential Method with Squeeze Bounds
+generate_gamma_GO <- function(n, a) {
+  samples <- numeric(n)
+  
+  # Pre-compute structural constants
+  mu <- a - 1
+  sigma <- sqrt(a + sqrt(8/3) * sqrt(a))
+  W <- sigma^2 / mu
+  d <- sqrt(6) * sigma
+  b_bound <- mu + d
+  beta_const <- 0.009572265238289
+  
+  for(i in 1:n) {
+    accepted <- FALSE
+    while(!accepted) {
+      u1 <- runif(1)
+      
+      if(u1 <= beta_const) {
+        # --- TAIL REGION (Exponential Envelope) ---
+        s_exp <- rexp(1)
+        x <- b_bound * (1 + s_exp / d)
+        u2 <- runif(1)
+        
+        # Exact logarithmic expansion to bypass text errors
+        log_f <- mu * log(x / mu) - x + mu
+        log_h <- mu * log(b_bound / mu) - (1 - mu / b_bound) * x
+        log_r <- log(beta_const / (1 - beta_const)) + 0.5 * log(2 * pi * sigma^2) + 
+                 mu * log(mu / b_bound) + log(d / b_bound) + d
+                 
+        if(log(u2) <= log_f - (log_r + log_h)) {
+          samples[i] <- x
+          accepted <- TRUE
+        }
+      } else {
+        # --- CORE REGION (Normal Envelope) ---
+        s_norm <- rnorm(1)
+        x <- mu + sigma * s_norm
+        
+        if(x >= 0 && x <= b_bound) {
+          u2 <- runif(1)
+          S <- (s_norm^2) / 2
+          
+          # Lemma 3: Quick Acceptance Squeeze Bounds
+          if (s_norm >= 0) {
+            L <- 1 - S * (W - 1)
+          } else {
+            L <- 1 - S * (W - 1) + (s_norm^3 / sqrt(a)) * W
+          }
+          
+          if(u2 <= L) {
+            samples[i] <- x
+            accepted <- TRUE
+          } else {
+            # Full evaluation if squeeze test fails
+            if(log(u2) <= mu * (1 + log(x / mu)) - x + S) {
+              samples[i] <- x
+              accepted <- TRUE
+            }
+          }
+        }
+      }
+    }
+  }
+  return(samples)
+}
+```
+
+```{r}
+# Generate 10,000 samples for each segment of the architecture
+set.seed(42)
+n_samples <- 10000
+
+# Route through the master wrapper function
+samples_GS <- generate_gamma_complete(n_samples, a = 0.5)
+samples_GC <- generate_gamma_complete(n_samples, a = 2.0)
+samples_GO <- generate_gamma_complete(n_samples, a = 10.0)
+
+# Set up a 1x3 plotting grid to display the histograms side-by-side
+par(mfrow=c(1, 3))
+
+# ---------------------------------------------------------
+# Plot 1: Algorithm GS (a = 0.5)
+# ---------------------------------------------------------
+hist(samples_GS, probability = TRUE, breaks = 50, col = "lightblue",
+     main = "GS Module: Gamma(a=0.5)", xlab = "x", ylab = "Density", border = "white")
+curve(dgamma(x, shape = 0.5, rate = 1), add = TRUE, col = "darkred", lwd = 2)
+legend("topright", legend = c("Empirical", "Theoretical"),
+       fill = c("lightblue", NA), border = c("white", NA),
+       col = c(NA, "darkred"), lwd = c(NA, 2), bty = "n")
+
+# ---------------------------------------------------------
+# Plot 2: Algorithm GC (a = 2.0)
+# ---------------------------------------------------------
+hist(samples_GC, probability = TRUE, breaks = 50, col = "lightgreen",
+     main = "GC Module: Gamma(a=2.0)", xlab = "x", ylab = "Density", border = "white")
+curve(dgamma(x, shape = 2.0, rate = 1), add = TRUE, col = "darkblue", lwd = 2)
+legend("topright", legend = c("Empirical", "Theoretical"),
+       fill = c("lightgreen", NA), border = c("white", NA),
+       col = c(NA, "darkblue"), lwd = c(NA, 2), bty = "n")
+
+# ---------------------------------------------------------
+# Plot 3: Algorithm GO (a = 10.0)
+# ---------------------------------------------------------
+hist(samples_GO, probability = TRUE, breaks = 50, col = "lightcoral",
+     main = "GO Module: Gamma(a=10.0)", xlab = "x", ylab = "Density", border = "white")
+curve(dgamma(x, shape = 10.0, rate = 1), add = TRUE, col = "darkgreen", lwd = 2)
+legend("topright", legend = c("Empirical", "Theoretical"),
+       fill = c("lightcoral", NA), border = c("white", NA),
+       col = c(NA, "darkgreen"), lwd = c(NA, 2), bty = "n")
+
+# Reset plotting window
+par(mfrow=c(1, 1))
+```
