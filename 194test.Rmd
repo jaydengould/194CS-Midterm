@@ -1,0 +1,184 @@
+---
+title: "test"
+author: "Kian Jadbabaei"
+date: "2026-02-04"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# ==============================================================================
+# 1. ALGORITHM GC (The Cauchy Method)
+# Source: Dieter & Ahrens (1974), Page 7
+# ==============================================================================
+algorithm_gc_accurate <- function(n, a) {
+  # "Algorithm GC (a > 1)"
+  if (a <= 1) stop("a must be > 1")
+  
+  results <- numeric(n)
+  count <- 0
+  
+  while (count < n) {
+    # 1. Set b <- a - 1, A <- a + b, and s <- sqrt(A)
+    b <- a - 1
+    A <- a + b
+    s <- sqrt(A)
+    
+    # 2. Generate u. Set t <- s * tan(pi * (u - 0.5)) and x <- b + t
+    u <- runif(1)
+    t <- s * tan(pi * (u - 0.5))
+    x <- b + t
+    
+    # 3. If x < 0 go to 2
+    if (x < 0) {
+      next # "Go to 2"
+    }
+    
+    # 4. Generate u'. If u' > exp(b*ln(x/b) - t + ln(1 + t^2/A)) go to 2.
+    #    Otherwise deliver x.
+    u_prime <- runif(1)
+    rejection_condition <- exp(b * log(x/b) - t + log(1 + (t^2)/A))
+    
+    if (u_prime > rejection_condition) {
+      next # "Go to 2"
+    } else {
+      # Deliver x
+      count <- count + 1
+      results[count] <- x
+    }
+  }
+  return(results)
+}
+
+# ==============================================================================
+# 2. ALGORITHM GO (Modified Normal-Exponential Method)
+# Source: Dieter & Ahrens (1974), Page 17
+# ==============================================================================
+algorithm_go_accurate <- function(n, a) {
+  # "Algorithm GO (a > 2.5327805161251)"
+  if (a <= 2.5327805161251) stop("a must be > 2.5327805161251")
+  
+  results <- numeric(n)
+  count <- 0
+  
+  while (count < n) {
+    # 1. Set mu <- a - 1, V <- a + 1.632... * sqrt(a), sigma <- sqrt(V)
+    #    W <- sigma^2 / mu
+    #    d <- 2.449... * sigma and b <- mu + d
+    mu <- a - 1
+    sigma_const <- 1.63299316185545 # sqrt(8/3)
+    V <- a + sigma_const * sqrt(a)
+    sigma <- sqrt(V)
+    W <- sigma^2 / mu
+    d_const <- 2.44948974278318 # sqrt(6)
+    d <- d_const * sigma
+    b <- mu + d
+    
+    # 2. Generate u. If u <= 0.009572265238289 go to 8.
+    u <- runif(1)
+    if (u <= 0.009572265238289) {
+      
+      # --- TAIL SECTION (Steps 8-9) ---
+      
+      # 8. Take a sample s from standard exponential and set x <- b(1 + s/d)
+      s <- rexp(1)
+      x <- b * (1 + s/d)
+      
+      # 9. Generate u. If ln u > mu(2 + ln(x/mu) - x/b) + 3.72... - b - ln(da/b)
+      #    go to 2, otherwise deliver x.
+      u_step9 <- runif(1)
+      c3 <- 3.7203284924588
+      condition <- mu * (2 + log(x/mu) - x/b) + c3 - b - log(d * a / b)
+      
+      if (log(u_step9) > condition) {
+        next # "Go to 2"
+      } else {
+        count <- count + 1
+        results[count] <- x
+      }
+      
+    } else {
+      
+      # --- BODY SECTION (Steps 3-7) ---
+      
+      # 3. Take sample s from standard normal. Set x <- mu + sigma*s.
+      #    If x < 0 or x > b go to 2.
+      s <- rnorm(1)
+      x <- mu + sigma * s
+      
+      if (x < 0 || x > b) {
+        next # "Go to 2"
+      }
+      
+      # 4. Generate u and set S <- s^2/2. If s >= 0 go to 6.
+      u_step4 <- runif(1)
+      S <- (s^2) / 2
+      
+      if (s >= 0) {
+        # 6. If u <= 1 - S(W - 1) deliver x.
+        if (u_step4 <= 1 - S * (W - 1)) {
+          count <- count + 1
+          results[count] <- x
+          next # Loop continues to next sample
+        }
+        # Fall through to Step 7
+      } else {
+        # 5. If u <= 1 - S((1 - 2s/V)W - 1) deliver x, otherwise go to 7.
+        if (u_step4 <= 1 - S * ((1 - 2*s/V)*W - 1)) {
+          count <- count + 1
+          results[count] <- x
+          next # Loop continues to next sample
+        }
+        # Fall through to Step 7
+      }
+      
+      # 7. If ln u > mu(1 + ln(x/mu)) - x + S go to 2, otherwise deliver x.
+      if (log(u_step4) > mu * (1 + log(x/mu)) - x + S) {
+        next # "Go to 2"
+      } else {
+        count <- count + 1
+        results[count] <- x
+      }
+    }
+  }
+  return(results)
+}
+
+# ==============================================================================
+# 3. COMPARISON & VISUALIZATION
+# ==============================================================================
+
+# Parameters
+N <- 10000
+A_PARAM <- 5.0 # Must be > 2.533 for Algorithm GO
+
+# Generate Data
+cat("Generating 10,000 samples with Algorithm GC...\n")
+samples_gc <- algorithm_gc_accurate(N, A_PARAM)
+
+cat("Generating 10,000 samples with Algorithm GO...\n")
+samples_go <- algorithm_go_accurate(N, A_PARAM)
+
+# Plot Results (Side-by-Side)
+
+
+# Plot 1: Algorithm GC 
+hist(samples_gc, breaks=50, freq=FALSE, col=rgb(0,0,1,0.5), 
+     main="Algorithm GC (Cauchy)", xlab="x")
+curve(dgamma(x, shape=A_PARAM), add=TRUE, col="red", lwd=2)
+legend("topright", legend=c("GC Samples", "True Gamma"), 
+       col=c("blue", "red"), lwd=2)
+
+# Plot 2: Algorithm GO 
+hist(samples_go, breaks=50, freq=FALSE, col=rgb(0,1,0,0.5), 
+     main="Algorithm GO (Normal-Exp)", xlab="x")
+curve(dgamma(x, shape=A_PARAM), add=TRUE, col="red", lwd=2)
+legend("topright", legend=c("GO Samples", "True Gamma"), 
+       col=c("green", "red"), lwd=2)
+
+par(mfrow=c(1, 1)) # Reset layout
+```
+
