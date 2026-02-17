@@ -11,7 +11,9 @@ output:
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## Introduction TBD (Explain article selected, authors, date, etc)
+## Introduction
+
+We selected the article "Acceptance-Rejection Techniques for Sampling from the Gamma and Beta Distributions," authored by U. Dieter and J.H. Ahrens in 1974. The paper builds upon John von Neumann's early concepts of generating random variables by majorizing a target probability density function.
 
 ## Summary of Article and its Significance to RNG
 
@@ -44,11 +46,13 @@ To demonstrate functionality, we engineered a master routing function, `generate
 
 To verify the functionality of our code, we generated $10,000$ samples across different parameters that correspond to each algorithm and a secondary Beta distribution ($a=2.5, b=5.0$). We plotted the histograms against the theoretical density curves. Then, we used each generated array in a Kolmogorov-Smirnov (K-S) statistical test. Comparing our empirical outputs against the theoretical cumulative distribution functions (`pgamma` and `pbeta`), all algorithmic modules yielded p-values well above the $0.05$ significance threshold (meaning we fail to reject the null hypothesis). The statistical verification and visual alignment of the histograms confirm the accuracy of the routing algorithm. All outputs pass as true Gamma and Beta variables.
 
-## Discussion of Implementation Challeges and Insights Gained
+## Discussion of Implementation Challenges and Insights Gained
 
 One of the first challenges we encountered was understanding why the threshold of $a = 2.53$ exists. At first glance it appears to be a tuning choice, but a careful reading of the paper revealed that it is the exact value where the cubic discriminant in Lemma 3 becomes positive. Below this threshold, the polynomial squeeze bounds used in Algorithm GO are not mathematically guaranteed to be valid lower bounds on the acceptance ratio $f(x)/g(x)$, meaning the algorithm could accept incorrect samples. This allowed us to understand that $a = 2.53$ is a mathematical boundary proven in Lemma 3. We gained insight on how limits in statistical software are dictated by rigid algebraic proofs, and implementing RNG algorithms without understanding those proofs makes it impossible to know whether the implementation is actually correct.
 
 Another challenge came when we realized that only one of the introduced algorithms was not enough to generate a Gamma variable for all possible values of $a$. To bypass this, we had to figure out which algorithms to use and how to create the master function to combine them together. We found that Algorithm GS was used for values of $a$ less than 1, Algorithm GC was useful for values of $a$ greater than 1 and less than or equal to 2.53, and that Algorithm GO was useful for all values of $a$ greater than 2.53. When creating our `generate_gamma_complete` master wrapper, we used if statements to verify that the correct algorithm was routed to and used based on the value of $a$. The insight that we gained from the challenge was an understanding of how foundational statistical libraries actually operate. We learned that software functions like R’s `rgamma()` are not single equations but actually more sophisticated wrappers that take inputs and route them to specialized algorithms.
+
+\newpage
 
 ## Appendix
 
@@ -180,7 +184,7 @@ generate_gamma_GO <- function(n, a) {
       u1 <- runif(1)
       
       if(u1 <= beta_const) {
-        # --- TAIL REGION (Exponential Envelope) ---
+        # TAIL REGION (Exponential Envelope)
         
         # Step 8: Take a sample s from the standard exponential distribution and set x <- b(1+s/d). 
         s_exp <- rexp(1)
@@ -201,7 +205,7 @@ generate_gamma_GO <- function(n, a) {
           accepted <- TRUE
         }
       } else {
-        # --- CORE REGION (Normal Envelope) ---
+        # CORE REGION (Normal Envelope)
         
         # Step 3: Take a sample s from the standard normal distribution and set x <- mu + sigma*s. 
         s_norm <- rnorm(1)
@@ -286,7 +290,7 @@ samples_Beta <- generate_beta_from_gamma(n_samples, a = 2.5, b = 5.0)
 
 # Plot 1: Algorithm GS (a = 0.5)
 hist(samples_GS, probability = TRUE, breaks = 50, col = "lightblue",
-     main = "GS Module: Gamma(a=0.5)", xlab = "x", ylab = "Density", border = "white")
+     main = "GS Algorithm: Gamma(a=0.5)", xlab = "x", ylab = "Density", border = "white")
 curve(dgamma(x, shape = 0.5, rate = 1), add = TRUE, col = "darkred", lwd = 2)
 legend("topright", legend = c("Empirical", "Theoretical"),
        fill = c("lightblue", NA), border = c("white", NA),
@@ -298,7 +302,7 @@ cat("Algorithm GS (a=0.5) p-value:", ks_GS$p.value, "\n")
 
 # Plot 2: Algorithm GC (a = 2.0)
 hist(samples_GC, probability = TRUE, breaks = 50, col = "lightgreen",
-     main = "GC Module: Gamma(a=2.0)", xlab = "x", ylab = "Density", border = "white")
+     main = "GC Algorithm: Gamma(a=2.0)", xlab = "x", ylab = "Density", border = "white")
 curve(dgamma(x, shape = 2.0, rate = 1), add = TRUE, col = "darkblue", lwd = 2)
 legend("topright", legend = c("Empirical", "Theoretical"),
        fill = c("lightgreen", NA), border = c("white", NA),
@@ -310,7 +314,7 @@ cat("Algorithm GC (a=2.0) p-value:", ks_GC$p.value, "\n")
 
 # Plot 3: Algorithm GO (a = 10.0)
 hist(samples_GO, probability = TRUE, breaks = 50, col = "lightcoral",
-     main = "GO Module: Gamma(a=10.0)", xlab = "x", ylab = "Density", border = "white")
+     main = "GO Algorithm: Gamma(a=10.0)", xlab = "x", ylab = "Density", border = "white")
 curve(dgamma(x, shape = 10.0, rate = 1), add = TRUE, col = "darkgreen", lwd = 2)
 legend("topright", legend = c("Empirical", "Theoretical"),
        fill = c("lightcoral", NA), border = c("white", NA),
