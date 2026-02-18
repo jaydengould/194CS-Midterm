@@ -25,7 +25,7 @@ The primary significance of the article lies in its resolution of the computatio
 
 For this project, we discovered a mathematical constraint identified by Dieter and Ahrens: no single acceptance-rejection envelope can correctly cover the entire domain of the Gamma shape parameter $a \in (0, \infty)$. To build a universally functional Gamma generator, we implemented a wrapper function of three algorithms from the text:
 
-**Algorithm GS ($a \leq 1$):** When $a \leq 1$, the Gamma density has an infinite asymptote at zero, making standard envelope construction difficult. Algorithm GS bypasses this by creating a piecewise envelope $g(x)$ proven in Lemma 4 of the text. For the core region ($0 \leq x \leq 1$), it utilizes a power function proposal, generating candidates via the inverse transform $x = p^{1/a}$ where $p = bu$ and $b = (e+a)/e$. For the tail region ($x > 1$), it switches to an exponential proposal generated via $x = -\ln((b-p)/a)$. Each candidate then is subject to a log-scale acceptance test, and the paper proves the expected number of trials per accepted sample stays between 1.0 and 1.4 across all valid $a$, making GS highly efficient.
+**Algorithm GS ($a \leq 1$):** When $a \leq 1$, the Gamma density has an asymptote at zero, making standard envelope construction difficult. Algorithm GS bypasses this by creating a piecewise envelope $g(x)$ proven in Lemma 4 of the text. For the core region ($0 \leq x \leq 1$), it utilizes a power function proposal, generating candidates via the inverse transform $x = p^{1/a}$ where $p = bu$ and $b = (e+a)/e$. For the tail region ($x > 1$), it switches to an exponential proposal generated via $x = -\ln((b-p)/a)$. Each candidate then is subject to a log-scale acceptance test, and the paper proves the expected number of trials per accepted sample stays between 1.0 and 1.4 across all valid $a$, making GS highly efficient.
 
 **Algorithm GC ($1 < a \leq 2.53$):** For parameters slightly above 1, we implemented the Cauchy Method, derived from Lemma 1 of the text. Since the Cauchy distribution has polynomial tails that decay at $O(x^{-2})$ rather than exponentially, it stays thick enough in the tails to sit above the Gamma density, making it a valid envelope for this parameter range. The envelope is optimally centered at the Gamma's mode $b = a-1$ and scaled by $s = \sqrt{2a-1}$, chosen so that the majorizing function touches the Gamma target exactly at its mode. Candidates are drawn via the Cauchy inverse CDF:$$x = b + s \cdot \tan\!\left(\pi\!\left(u - \tfrac{1}{2}\right)\right)$$ and acceptance is determined by a single log-scale ratio evaluation. There are no squeeze bounds in this algorithm; the paper reports that the expected number of trials decreases from $\pi \approx 3.14$ at $a = 1$ toward $\sqrt{\pi} \approx 1.77$ as $a \to \infty$, so efficiency improves as the parameter grows. The upper bound of $a \leq 2.53$ is not mandatory, it is the threshold below which Algorithm GO's squeeze bounds are mathematically invalid, as proven through a cubic discriminant analysis in Lemma 3.
 
@@ -283,10 +283,13 @@ samples_Beta <- generate_beta_from_gamma(n_samples, a = 2.5, b = 5.0)
 
 #Plots and KS tests for each algorithm:
 
-#We make use of histograms of our functions as well as the curve of the theoretical function to make sure that our algorithms fit the shape of the random variable distributions.
+#We make use of histograms of our functions as well as the curve of the theoretical function 
+#to make sure that our algorithms fit the shape of the random variable distributions.
 
-# The K-S test evaluates if the empirical sample distribution significantly deviates from the theoretical CDF.
+# The K-S test evaluates if the empirical sample distribution significantly deviates 
+# from the theoretical CDF.
 # A p-value > 0.05 indicates we fail to reject the null hypothesis.
+# (Distributions match)
 
 # Plot 1: Algorithm GS (a = 0.5)
 hist(samples_GS, probability = TRUE, breaks = 50, col = "lightblue",
